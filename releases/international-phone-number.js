@@ -1,16 +1,38 @@
 (function() {
   "use strict";
-  angular.module("internationalPhoneNumber", []).directive('internationalPhoneNumber', [
-    '$timeout', function($timeout) {
+  angular.module("internationalPhoneNumber", []).constant('ipnConfig', {
+    allowExtensions: false,
+    autoFormat: true,
+    autoHideDialCode: true,
+    autoPlaceholder: true,
+    customPlaceholder: null,
+    defaultCountry: "",
+    geoIpLookup: null,
+    nationalMode: true,
+    numberType: "MOBILE",
+    onlyCountries: void 0,
+    preferredCountries: ['us', 'gb'],
+    skipUtilScriptDownload: false,
+    utilsScript: ""
+  }).directive('internationalPhoneNumber', [
+    '$timeout', 'ipnConfig', function($timeout, ipnConfig) {
       return {
         restrict: 'A',
         require: '^ngModel',
         scope: {
           ngModel: '=',
-          defaultCountry: '@'
+          country: '='
         },
         link: function(scope, element, attrs, ctrl) {
           var handleWhatsSupposedToBeAnArray, options, read, watchOnce;
+          if (ctrl) {
+            if (element.val() !== '') {
+              $timeout(function() {
+                element.intlTelInput('setNumber', element.val());
+                return ctrl.$setViewValue(element.val());
+              }, 0);
+            }
+          }
           read = function() {
             return ctrl.$setViewValue(element.val());
           };
@@ -21,17 +43,7 @@
               return value.toString().replace(/[ ]/g, '').split(',');
             }
           };
-          options = {
-            autoFormat: true,
-            autoHideDialCode: true,
-            defaultCountry: '',
-            nationalMode: false,
-            numberType: '',
-            onlyCountries: void 0,
-            preferredCountries: ['us', 'gb'],
-            responsiveDropdown: false,
-            utilsScript: ""
-          };
+          options = angular.copy(ipnConfig);
           angular.forEach(options, function(value, key) {
             var option;
             if (!(attrs.hasOwnProperty(key) && angular.isDefined(attrs[key]))) {
@@ -50,26 +62,30 @@
           });
           watchOnce = scope.$watch('ngModel', function(newValue) {
             return scope.$$postDigest(function() {
-              options.defaultCountry = scope.defaultCountry;
-              if (newValue !== null && newValue !== void 0 && newValue !== '') {
-                element.val(newValue);
+              if (newValue !== null && newValue !== void 0 && newValue.length > 0) {
+                if (newValue[0] !== '+') {
+                  newValue = '+' + newValue;
+                }
+                ctrl.$modelValue = newValue;
               }
               element.intlTelInput(options);
-              if (!(attrs.skipUtilScriptDownload !== void 0 || options.utilsScript)) {
+              if (!(options.skipUtilScriptDownload || attrs.skipUtilScriptDownload !== void 0 || options.utilsScript)) {
                 element.intlTelInput('loadUtils', '/bower_components/intl-tel-input/lib/libphonenumber/build/utils.js');
               }
               return watchOnce();
             });
           });
+          scope.$watch('country', function(newValue) {
+            if (newValue !== null && newValue !== void 0 && newValue !== '') {
+              return element.intlTelInput("selectCountry", newValue);
+            }
+          });
           ctrl.$formatters.push(function(value) {
             if (!value) {
               return value;
-            } else {
-              $timeout(function() {
-                return element.intlTelInput('setNumber', value);
-              }, 0);
-              return element.val();
             }
+            element.intlTelInput('setNumber', value);
+            return element.val();
           });
           ctrl.$parsers.push(function(value) {
             if (!value) {
@@ -77,15 +93,14 @@
             }
             return value.replace(/[^\d]/g, '');
           });
-          if (ctrl.$validators) {
-            ctrl.$validators.internationalPhoneNumber = function(value) {
-              if (!value) {
-                return value;
-              } else {
-                return element.intlTelInput("isValidNumber");
-              }
-            };
-          }
+          ctrl.$validators.internationalPhoneNumber = function(value) {
+            var selectedCountry;
+            selectedCountry = element.intlTelInput('getSelectedCountryData');
+            if (!value || (selectedCountry && selectedCountry.dialCode === value)) {
+              return true;
+            }
+            return element.intlTelInput("isValidNumber");
+          };
           element.on('blur keyup change', function(event) {
             return scope.$apply(read);
           });
